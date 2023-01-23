@@ -1,13 +1,19 @@
 import numpy as np
 
 
-def print_time_passed(time, day, time_day_start):
+def print_time_passed(time, day, time_day_start, experiments_done):
     time_passed = time - time_day_start
-    print(f"Time required (day {day + 1}): {int(time_passed/60)} hours, {int(time_passed % 60)} minutes")
+    print(f"Time required (day {day}): {int(time_passed/60)} hours, {int(time_passed % 60)} minutes.\n"
+          f"\t{experiments_done} concentration-combinations tried.")
 
-if __name__ == "__main__":
-    # concentrations relative to literature values of the transition concentration
-    concentrations = [0, 0.3, 0.6, 0.9, 1.2]
+
+def calculate_experimental_time(i, experiment, last_experiment):
+    reset_c = 20        # minutes
+    change_c = 5        # minutes
+    change_f = .5
+    change_p = 3
+    t_single_measurement = 10/60
+    t_dark_measurement = 2/60
 
     # gas flow rates in l/min
     flow_rates = [0, 113, 226, 339]
@@ -15,53 +21,78 @@ if __name__ == "__main__":
     # detector positions (measurement height in the column)
     positions = ["low", "med", "high"]
 
+    time = 0
+    n_datasets = 0
+
+    if i == 0:
+        time += reset_c
+    elif any(experiment < last_experiment):
+        # if any values from the current row are less than that of a previous one, we have to add time to reset_c
+        time += reset_c
+    elif not all(experiment == last_experiment):
+        # if concentrations have changed, we have to add time to change_c
+        time += change_c
+
+    for position in positions:
+        time += change_p
+        for flow_rate in flow_rates:
+            time += change_f
+            n_datasets += 1
+            if flow_rate == 0:
+                time += t_dark_measurement
+            else:
+                time += t_single_measurement
+
+    return time, n_datasets
+
+
+def add_experimental_time(days_passed, time_day, experiments_done, time_next, cleanup=False):
+    if time_day + time_next > 420:
+        days_passed += 1
+        print_time_passed(time_day, days_passed, 0, experiments_done)
+        time_day = time_next
+        experiments_done = 1 if not cleanup else 0
+    else:
+        time_day += time_next
+        experiments_done += 1
+
+    if cleanup:
+        print_time_passed(time_day, days_passed + 1, 0, 0)
+
+    return time_day, experiments_done, days_passed
+
+
+if __name__ == "__main__":
+    design = np.loadtxt("design.txt", dtype=np.int8, delimiter=" ")
+    print(design.shape)
+
     measurement_cycles = 3
     measurement_days = 10
 
     # duration in minutes of each step in the experimental plan
     alignment = 360     # minutes
     cleanup = 360
-    reset_c = 20        # minutes
-    change_c = 5       # minutes
-    change_f = .5
-    change_p = 3
-    t_single_measurement = 10/60
 
-    time = 0
-    concentrations_checked = 0
     n_datasets = 0
+    days_passed = 0
+    time_day = 0
+    experiments_done = 0
+    last_experiment = []
 
-    for day in range(measurement_days):
-        time_day_start = time
-        # align on the first measurement day
-        if day == 0:
-            time += alignment
-            print_time_passed(time, day, time_day_start)
-            continue
-        # cleanup on the last day
-        if day == measurement_days -1:
-            time += cleanup
-            print_time_passed(time, day, time_day_start)
-            continue
-        
-        for i in range(measurement_cycles):
-            time += reset_c
-            for concentration in concentrations:
-                concentrations_checked += 1
-                time += change_c
-                for position in positions:
-                    time += change_p
-                    for flow_rate in flow_rates:
-                        time += change_f
-                        if flow_rate == 0:
-                            time += 2/60
-                        else:
-                            time += t_single_measurement
-                        n_datasets += 1
-        
-        print_time_passed(time, day, time_day_start)
-    
-    print(f"Checked {concentrations_checked} different concentrations in {measurement_days} days")
+    # add alignment time to time_day
+    time_day += alignment
+
+    for i, experiment in enumerate(design):
+        time_next, n_new_datasets = calculate_experimental_time(i, experiment, last_experiment)
+        time_day, experiments_done, days_passed = add_experimental_time(days_passed, time_day, experiments_done,
+                                                                        time_next)
+        n_datasets += n_new_datasets
+        last_experiment = experiment
+
+    time_day, experiments_done, days_passed = add_experimental_time(days_passed, time_day, experiments_done, cleanup,
+                                                                    cleanup=True)
+
+    print(f"Checked {design.shape[0]} different concentrations in {days_passed} days")
     print(f"Obtained {n_datasets} datasets, or {n_datasets * 1300} frames.")
 
     n_frames = n_datasets * 1300
@@ -71,5 +102,5 @@ if __name__ == "__main__":
     # assuming 5 seconds reconstruction time per frame
     time_s_per_frame = 5
     reconstruction_time = n_frames * time_s_per_frame / 60
-    print(f"Requires {int(np.ceil(reconstruction_time / 60 / 24))} days of reconstruction "
+    print(f"Requires {int(reconstruction_time / 60 / 24) + 1} days of reconstruction "
           f"at {time_s_per_frame} s per reconstruction")
