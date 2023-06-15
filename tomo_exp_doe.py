@@ -9,15 +9,14 @@ import numpy as np
 
 # experimental levels required of the different fluid additions
 levels = [
-    5,      # salt A
-    5,      # salt B
-    5,      # salt C
-    5,      # salt D
-    5,      # salt E
+    5,      # compound A
+    5,      # compound B
+    5,      # compound C
+    5,      # compound D
     ]
 
 # reduction values. 100000 leads to 37 GB array requirement, not possible
-reduction = 13
+reduction = 8
 
 # Create Generalized Subset Design
 design = pyDOE2.gsd(levels, reduction)
