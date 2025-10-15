@@ -21,7 +21,11 @@ reduction = 8
 # Create Generalized Subset Design
 design = pyDOE2.gsd(levels, reduction)
 
+# Create full factorial design
+full_fact_design = pyDOE2.fullfact(levels)
+
 # Save design values as txt file
-np.savetxt("./design.txt", design, fmt="%d")
+# np.savetxt("./design.txt", design, fmt="%d")
 
 print(f"{design.shape[0]} experiments required.")
+print(f"{full_fact_design.shape[0]} experiments for full factorial.")

@@ -17,18 +17,23 @@ def calculate_experimental_time(i, experiment, last_experiment):
     # dark measurement is assumed to take 2 seconds
     reset_c = 20        # minutes
     change_c = 5        # minutes
-    change_f = .5
+    change_f = 1.5
     change_p = 3
+    short_measurement = False
     t_short_measurement = 10/60     # seconds to minutes
-    frames_short_measurement = t_short_measurement * 60 * 130
+    frames_short_measurement = int(t_short_measurement * 60 * 130)
+    frame_size_short = 0.908
+    t_transfer_short = t_short_measurement * 3
+
+    long_measurement = True
     t_long_measurement = 120/60     # seconds to minutes
-    frames_long_measurement = t_long_measurement * 60 * 22
-    t_transfer_short = t_short_measurement
-    t_transfer_long = t_long_measurement
-    t_dark_measurement = 2/60       # seconds to minutes
+    frames_long_measurement = int(t_long_measurement * 60 * 22)
+    frame_size_long = 4.49
+    t_transfer_long = t_long_measurement * 3
+    t_dark_measurement = 10/60       # seconds to minutes
 
     # gas flow rates in l/min
-    flow_rates = [0, 20, 40]
+    flow_rates = [0, 20, 40, 60]
 
     # detector positions (measurement height in the column)
     positions = ["high"]
@@ -38,6 +43,7 @@ def calculate_experimental_time(i, experiment, last_experiment):
     n_frames = 0
     vials_used = 0
     amounts_used = [0, 0, 0, 0]
+    frames_size = 0
 
     if i == 0:
         time += reset_c
@@ -56,21 +62,26 @@ def calculate_experimental_time(i, experiment, last_experiment):
         vials_used += np.count_nonzero(increased_concentrations)
 
     for position in positions:
-        time += change_p
+        if len(positions) > 1:
+            time += change_p
         for flow_rate in flow_rates:
             time += change_f
             n_datasets += 1
             if flow_rate == 0:
                 time += t_dark_measurement
             else:
-                time += t_short_measurement
-                time += t_transfer_short
-                n_frames += frames_short_measurement
-                time += t_long_measurement
-                time += t_transfer_long
-                n_frames += frames_long_measurement
+                if short_measurement:    
+                    time += t_short_measurement
+                    time += t_transfer_short
+                    n_frames += frames_short_measurement
+                    frames_size += 3 * frames_short_measurement * frame_size_short
+                if long_measurement:
+                    time += t_long_measurement
+                    time += t_transfer_long
+                    n_frames += frames_long_measurement
+                    frames_size += 3 * frames_long_measurement * frame_size_long
 
-    return time, n_datasets, n_frames, amounts_used, vials_used
+    return time, n_datasets, n_frames, frames_size, amounts_used, vials_used
 
 
 def add_experimental_time(days_passed, time_day, experiments_done, time_next, cleanup=False):
@@ -104,24 +115,26 @@ if __name__ == "__main__":
     n_frames = 0
     amount_used = np.array([0, 0, 0, 0])
     total_vials = 0
+    total_data = 0
     last_experiment = []
 
     # add alignment time to time_day
     time_day += alignment
 
     for i, experiment in enumerate(design):
-        time_next, n_new_datasets, new_frames, amounts_added, vials_used = calculate_experimental_time(i, experiment,
-                                                                                                       last_experiment)
+        (time_next, n_new_datasets, new_frames,
+         added_size, amounts_added, vials_used) = calculate_experimental_time(i, experiment, last_experiment)
         time_day, experiments_done, days_passed = add_experimental_time(days_passed, time_day, experiments_done,
                                                                         time_next)
         n_frames += new_frames
+        total_data += added_size
         amount_used += amounts_added
         total_vials += vials_used
         n_datasets += n_new_datasets
         last_experiment = experiment
 
     # last concentrations are not taken into account yet, add them here.
-    if amounts_added == [0, 0, 0, 0]:
+    if all(amounts_added == 0):
         amount_used += last_experiment
 
     time_day, experiments_done, days_passed = add_experimental_time(days_passed, time_day, experiments_done, cleanup,
@@ -129,11 +142,11 @@ if __name__ == "__main__":
 
     # n_frames = n_datasets * 1300
 
-    print(f"Checked {design.shape[0]} different concentrations in {days_passed} days")
+    print(f"\nChecked {design.shape[0]} different concentrations in {days_passed} days")
     print(f"Obtained {n_datasets} datasets, or {n_frames} frames.")
 
-    dataset_size_MB = n_frames * 3 * 0.908
-    dataset_size_TB = dataset_size_MB / 1024 / 1024
+    # dataset_size_MB = n_frames * 3 * 0.908
+    dataset_size_TB = total_data / 1024 / 1024
     print(f"Raw data will take up {dataset_size_TB:.3f} TB of disk space")
     # assuming 5 seconds reconstruction time per frame
     time_s_per_frame = 5
